@@ -31,6 +31,7 @@ object AkkaPersistencePostgreSqlMigration extends App {
        |metadataTableName: $metadataTableName
        | journalTableName: $journalTableName
        |snapshotTableName: $snapshotTableName
+       |         password: ${Option(config.getString("postgreSQL.pass")).filter(_.nonEmpty).map("*" * _.length).getOrElse("[NO $PGPASSWORD FOUND]") }
        |====================================================
      """.stripMargin
   )
