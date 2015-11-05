@@ -1,0 +1,9 @@
+# SBT
+**/target/
+.history
+.sbtopts
+
+# MacOS
+.DS_Store
+
+.idea/
