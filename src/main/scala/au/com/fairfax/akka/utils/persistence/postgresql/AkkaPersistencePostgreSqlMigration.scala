@@ -213,7 +213,8 @@ object MigrationTool {
 
     val alterAddPrimaryKeyStmt = s"ALTER TABLE $journalTableName ADD PRIMARY KEY (persistence_key, sequence_nr)"
 
-    val dropPersistenceIdFromJournalStmt = s"ALTER TABLE $journalTableName DROP COLUMN persistence_id;"
+//    val dropPersistenceIdFromJournalStmt = s"ALTER TABLE $journalTableName DROP COLUMN persistence_id;"
+    val alterPersistenceIdDropNotNullFromJournalStmt = s"ALTER TABLE $journalTableName ALTER COLUMN persistence_id DROP NOT NULL;"
 
     val dropMarkerFromJournalStmt = s"ALTER TABLE $journalTableName DROP COLUMN marker;"
 
@@ -242,7 +243,9 @@ object MigrationTool {
               ("Make 'persistence_key' in the Journal table NOT NULL", alterPersistenceKeySetNotNull),
               ("Drop the PRIMARY KEY in the Journal table", alterDropPrimaryKeyStmt),
               ("Add a new PRIMARY KEY to the Journal table", alterAddPrimaryKeyStmt),
-              ("Drop 'persistence_id' from the Journal Table", dropPersistenceIdFromJournalStmt),
+//              ("Drop 'persistence_id' from the Journal Table", dropPersistenceIdFromJournalStmt),
+              ("Drop NOT NULL from 'persistence_id' column in the Journal Table",
+                alterPersistenceIdDropNotNullFromJournalStmt),
               ("Drop 'marker' from the Journal Table", dropMarkerFromJournalStmt),
               ("Drop 'created_at' from the Journal Table", dropCreatedAtFromJournalStmt),
               ("Add 'persistence_key' Column to the Snapshot Table", addPrimaryToSnapshotTableStmt),
