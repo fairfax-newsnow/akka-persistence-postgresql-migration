@@ -3,9 +3,10 @@ package au.com.fairfax.akka.utils.persistence.postgresql
 import au.com.fairfax.akka.utils.persistence.{DataSource, QueryResult, ResultSet, Row}
 import com.github.mauricio.async.db.postgresql.PostgreSQLConnection
 import com.github.mauricio.async.db.{QueryResult => PgQueryResult, ResultSet => PgResultSet, RowData}
+import org.slf4j.Logger
 
 import scala.language.postfixOps
-import scala.util.Try
+import scala.util.{Failure, Success, Try}
 
 /**
   * @author Lee, SeongHyun (Kevin)
@@ -46,6 +47,35 @@ object Pgs {
     override def apply[T](columnName: String): Option[T] = columns.get(columnName).flatMap(value => Try(value.asInstanceOf[T]).toOption)
 
     override def iterator: Iterator[(String, Any)] = columns.iterator
+  }
+
+  trait PostgreSqlConnectionCloseable  {
+
+    def logger: Option[Logger]
+
+    def closeFailed[R](block: Throwable => R)(implicit connection: PostgreSQLConnection): PartialFunction[Throwable, R] =  {
+      case e: Throwable =>
+        logger.foreach { log =>
+          log.warn(
+            s"""Something went wrong so close the connection.
+               |- Cause: ${e.getMessage}
+             """.stripMargin, e)
+        }
+        connection.disconnect
+        block(e)
+    }
+
+    def closeQuietly[T](implicit connection: PostgreSQLConnection): Try[T] => Unit = {
+      case Success(result) =>
+        connection.disconnect
+      case Failure(e) =>
+        logger.foreach(_.warn(
+          s"""
+             |Something went wrong anyway closing the connection.
+             |- Cause: ${e.getMessage}
+           """.stripMargin, e))
+        connection.disconnect
+    }
   }
 
 }
