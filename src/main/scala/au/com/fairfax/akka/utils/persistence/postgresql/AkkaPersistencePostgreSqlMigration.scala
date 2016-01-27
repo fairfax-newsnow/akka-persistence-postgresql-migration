@@ -1,5 +1,8 @@
 package au.com.fairfax.akka.utils.persistence.postgresql
 
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+
 import au.com.fairfax.akka.utils.persistence.postgresql.PostgreSQLSetup._
 import au.com.fairfax.akka.utils.persistence.{AsyncDbAccess, Row}
 import com.github.mauricio.async.db.util.ExecutorServiceUtils.CachedExecutionContext
@@ -17,11 +20,11 @@ import scala.language.postfixOps
 object AkkaPersistencePostgreSqlMigration extends App {
   import MigrationTool._
 
-  lazy val config = ConfigFactory.load
-  lazy val metadataTableName: String = config.getString("akka-persistence-sql-async.metadata-table-name")
-  lazy val journalTableName: String = config.getString("akka-persistence-sql-async.journal-table-name")
-  lazy val snapshotTableName: String = config.getString("akka-persistence-sql-async.snapshot-table-name")
-  lazy val dbName: String = config.getString("postgreSQL.db")
+  private val config = ConfigFactory.load
+  private val metadataTableName: String = config.getString("akka-persistence-sql-async.metadata-table-name")
+  private val journalTableName: String = config.getString("akka-persistence-sql-async.journal-table-name")
+  private val snapshotTableName: String = config.getString("akka-persistence-sql-async.snapshot-table-name")
+  private val dbName: String = config.getString("postgreSQL.db")
 
   println(
     s"""====================================================
@@ -35,36 +38,69 @@ object AkkaPersistencePostgreSqlMigration extends App {
        |====================================================
      """.stripMargin
   )
+  run()
 
-  val start = System.currentTimeMillis
+  def run(): Unit = {
 
-  private val tableInfoMap = MigrationTool.getAllPrimaryKeys(dbName).groupBy(_.name)
-  val journalTableInfo = tableInfoMap(journalTableName)(0)
-  val snapshotTableInfo = tableInfoMap(snapshotTableName)(0)
+    val start = System.currentTimeMillis
 
-  MigrationTool.createMetadataTable(metadataTableName)
-  val result = MigrationTool.migrateForAkka2_4(
-    journalTableInfo,
-    JournalTableName(journalTableName),
-    snapshotTableInfo,
-    SnapshotTableName(snapshotTableName),
-    MetadataTableName(metadataTableName)
-  )
+    val tableInfoMap = MigrationTool.getAllPrimaryKeys(dbName).groupBy(_.name)
+    val journalTableInfo = (for {
+        tableInfoSeq <- tableInfoMap.get(journalTableName)
+        tableInfo <- tableInfoSeq.headOption
+      } yield tableInfo)
+      .getOrElse(throw new RuntimeException("No journal table info was found."))
 
-  val end = System.currentTimeMillis - start
+    val snapshotTableInfo = (for {
+        tableInfoSeq <- tableInfoMap.get(snapshotTableName)
+        tableInfo <- tableInfoSeq.headOption
+      } yield tableInfo)
+      .getOrElse(throw new RuntimeException("No snapshot table info was found."))
 
-  println(
-    s"""
-       |====================================================
-       |result:
-       |----------------------------------------------------
-       |${result.mkString("\n")}
-       |It end ${java.text.NumberFormat.getIntegerInstance.format(end)} milliseconds.
-       |====================================================
-     """.stripMargin)
+    import sys.process._
+    val cwd = sys.props.getOrElse("user.dir", new java.io.File(".").getCanonicalPath)
+    val dumpFile = s"""$cwd/${dbName}_${LocalDateTime.now.format(DateTimeFormatter.ofPattern("uuuu-MM-dd_HH-mm-ss-A"))}.dump.compressed"""
 
+    println(s"cwd: $cwd")
+    println(
+      s"""
+         |Backing up DB
+         |${"-" * 20}
+         |       DB: $dbName
+         |Dump file: $dumpFile
+       """.stripMargin)
+
+    Process(Seq("pg_dump", "-Fc", dbName)) #> new java.io.File(dumpFile) !
+
+    println("Backup complete")
+
+    MigrationTool.createMetadataTable(metadataTableName)
+    val result = MigrationTool.migrateForAkka2_4(
+      journalTableInfo,
+      JournalTableName(journalTableName),
+      snapshotTableInfo,
+      SnapshotTableName(snapshotTableName),
+      MetadataTableName(metadataTableName)
+    )
+
+    val end = System.currentTimeMillis - start
+
+    println(
+      s"""
+         |====================================================
+         |result:
+         |----------------------------------------------------
+         |${result.mkString("\n")}
+         |It end ${java.text.NumberFormat.getIntegerInstance.format(end)} milliseconds.
+         |====================================================
+         |If anything went wrong, use the dump file which had created before migration was done.
+         |Dump file: $dumpFile
+         |
+         |You may run the command like this.
+         | pg_restore --no-owner -U $$PGUSER -h $$PGHOST -d $$PGDATABASE "$dumpFile"
+       """.stripMargin)
+  }
 }
-
 
 object MigrationTool {
 
@@ -175,9 +211,7 @@ object MigrationTool {
         con.sendQuery(createTableStmt)
       }
     }
-    .map(queryResult => {
-      println(mkResultReport(queryResult))
-    })
+    .map(queryResult => println(mkResultReport(queryResult)))
     .flatMap(_ => conn.disconnect)
 
     Await.result(future, 10 minutes)
